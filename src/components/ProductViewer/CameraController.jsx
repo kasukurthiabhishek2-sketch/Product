@@ -1,98 +1,101 @@
-import { useEffect, useRef } from 'react';
-import { useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { useEffect, useRef } from "react";
+import { useThree, useFrame } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
+import * as THREE from "three";
 
-/**
- * CameraController Component
- * 
- * CORE THREE.JS CAMERA & CONTROLS CONCEPTS:
- * 
- * 1. PerspectiveCamera:
- *    Simulates human eye perception where objects farther away appear smaller.
- *    Key parameters:
- *    - Field of View (FOV): The vertical visual angle in degrees (e.g., 45°).
- *    - Aspect Ratio: viewport width / height.
- *    - Near & Far clipping planes: only objects between near (0.1) and far (1000) are rendered.
- * 
- * 2. Mathematical Automatic Model Framing:
- *    How do we ensure any 3D model (whether 10 cm or 10 meters) fits perfectly in view?
- *    Using basic trigonometry on the camera's frustum:
- *    - `fovInRadians = camera.fov * (Math.PI / 180)`
- *    - `distance = (maxDimension / 2) / Math.tan(fovInRadians / 2)`
- *    Multiplying by a 1.4-1.6 framing factor leaves comfortable visual breathing room around the product.
- * 
- * 3. OrbitControls & Damping:
- *    OrbitControls rotates the camera in spherical coordinates (radius, theta, phi) around a `target` vector.
- *    - Damping (`enableDamping = true`): adds simulated physical inertia so rotation decelerates
- *      organically instead of stopping abruptly.
- *    - Polar Angle Clamping: `maxPolarAngle = Math.PI / 2` prevents the camera from dipping beneath
- *      the ground plane, ensuring the viewer never sees an awkward underside void.
- *    - Distance Clamping: `minDistance` and `maxDistance` prevent the user from zooming infinitely
- *      into the mesh or losing the product into outer space.
- */
+function computeDefaultPosition(fitDistance, center) {
+  return new THREE.Vector3(
+    center.x + fitDistance * 0.72,
+    center.y + fitDistance * 0.4,
+    center.z + fitDistance * 1.05
+  );
+}
+
 export function CameraController({
   isAutoRotating = false,
   resetTrigger = 0,
-  bounds = null
+  bounds = null,
 }) {
   const { camera } = useThree();
   const controlsRef = useRef();
+  const isTransitioningRef = useRef(false);
+  const targetPosRef = useRef(new THREE.Vector3());
+  const lastResetRef = useRef(resetTrigger);
+  const initializedRef = useRef(false);
 
-  /**
-   * Automatic Framing Effect
-   * 
-   * Triggers whenever the model finishes loading (bounds ready)
-   * or when the user clicks the "Reset View" button.
-   */
+  // Frame model on initial load
   useEffect(() => {
     if (!bounds || !controlsRef.current) return;
 
     const { center, maxDim } = bounds;
+    const fovRad = (camera.fov * Math.PI) / 180;
+    const fitDistance = (maxDim / (2 * Math.tan(fovRad / 2))) * 1.48;
 
-    // Convert camera vertical Field Of View (FOV) from degrees to radians
-    const fovInRadians = (camera.fov * Math.PI) / 180;
-
-    // Calculate ideal distance to fit the bounding sphere inside the camera frustum
-    // We add a 1.45 padding factor so the product is comfortably framed
-    const fitDistance = (maxDim / (2 * Math.tan(fovInRadians / 2))) * 1.45;
-
-    // Set OrbitControls target to the center of the model (orbit pivot)
     controlsRef.current.target.set(center.x, center.y, center.z);
-
-    // Position camera at an attractive 3/4 isometric perspective:
-    // Slightly elevated (0.4 * distance), angled diagonally
-    const targetCamX = center.x + fitDistance * 0.75;
-    const targetCamY = center.y + fitDistance * 0.4;
-    const targetCamZ = center.z + fitDistance * 1.1;
-
-    camera.position.set(targetCamX, targetCamY, targetCamZ);
-    camera.lookAt(center.x, center.y, center.z);
-
-    // Dynamic zoom boundaries based on calculated model scale
     controlsRef.current.minDistance = fitDistance * 0.45;
-    controlsRef.current.maxDistance = fitDistance * 3.0;
+    controlsRef.current.maxDistance = fitDistance * 2.8;
 
+    const pos = computeDefaultPosition(fitDistance, center);
+    targetPosRef.current.copy(pos);
+
+    if (!initializedRef.current) {
+      camera.position.copy(pos);
+      camera.lookAt(center.x, center.y, center.z);
+      controlsRef.current.update();
+      initializedRef.current = true;
+    }
+  }, [bounds, camera]);
+
+  // Animated reset
+  useEffect(() => {
+    if (!bounds || !controlsRef.current || resetTrigger === 0) return;
+    if (resetTrigger === lastResetRef.current) return;
+
+    lastResetRef.current = resetTrigger;
+    const { center, maxDim } = bounds;
+    const fovRad = (camera.fov * Math.PI) / 180;
+    const fitDistance = (maxDim / (2 * Math.tan(fovRad / 2))) * 1.48;
+
+    controlsRef.current.target.set(center.x, center.y, center.z);
+    targetPosRef.current.copy(computeDefaultPosition(fitDistance, center));
+    isTransitioningRef.current = true;
+  }, [resetTrigger, bounds, camera]);
+
+  // Smooth camera transition
+  useFrame((state, delta) => {
+    if (!isTransitioningRef.current || !bounds || !controlsRef.current) return;
+
+    const cam = state.camera;
+    const target = targetPosRef.current;
+
+    cam.position.x = THREE.MathUtils.damp(cam.position.x, target.x, 6, delta);
+    cam.position.y = THREE.MathUtils.damp(cam.position.y, target.y, 6, delta);
+    cam.position.z = THREE.MathUtils.damp(cam.position.z, target.z, 6, delta);
+
+    controlsRef.current.target.set(bounds.center.x, bounds.center.y, bounds.center.z);
     controlsRef.current.update();
-  }, [bounds, resetTrigger, camera]);
+
+    if (cam.position.distanceTo(target) < 0.005) {
+      cam.position.copy(target);
+      isTransitioningRef.current = false;
+      controlsRef.current.update();
+    }
+  });
 
   return (
     <OrbitControls
       ref={controlsRef}
-      // Inertial damping creates a smooth, premium weight when dragging
-      enableDamping={true}
-      dampingFactor={0.06}
-      // Prevent flipping upside down or dipping beneath the floor plane
-      minPolarAngle={0.1}
-      maxPolarAngle={Math.PI / 2 + 0.04}
-      // Turntable presentation rotation
+      enableDamping
+      dampingFactor={0.05}
+      minPolarAngle={0.12}
+      maxPolarAngle={Math.PI / 2 - 0.02}
       autoRotate={isAutoRotating}
-      autoRotateSpeed={1.4}
-      // Pan controls with right-click or two fingers
-      enablePan={true}
-      panSpeed={0.8}
-      // Zoom controls with wheel or pinch
-      enableZoom={true}
-      zoomSpeed={0.9}
+      autoRotateSpeed={1.2}
+      enablePan
+      panSpeed={0.7}
+      enableZoom
+      zoomSpeed={0.85}
+      onStart={() => { isTransitioningRef.current = false; }}
     />
   );
 }

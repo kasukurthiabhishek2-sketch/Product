@@ -1,11 +1,5 @@
-import React from 'react';
+import React from "react";
 
-/**
- * ErrorBoundary for 3D Viewer
- * 
- * Catches WebGL, shader compilation, or GLB asset network errors gracefully
- * so the entire React application does not crash to a blank screen.
- */
 export class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -17,7 +11,7 @@ export class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('3D Product Configurator Error:', error, errorInfo);
+    console.error("3D Viewer Error:", error, errorInfo);
   }
 
   handleReload = () => {
@@ -33,11 +27,11 @@ export class ErrorBoundary extends React.Component {
             <div className="error-icon">⚠️</div>
             <h2 className="error-title">Unable to load 3D Product</h2>
             <p className="error-description">
-              There was an issue loading the 3D model asset or initializing WebGL.
+              There was an issue loading the 3D model or initializing WebGL.
               Please ensure WebGL is enabled in your browser.
             </p>
             <p className="error-detail-text">
-              {this.state.error?.message || 'Check the model file path in /models/product.glb'}
+              {this.state.error?.message || "Check the model file path."}
             </p>
             <button
               type="button"
