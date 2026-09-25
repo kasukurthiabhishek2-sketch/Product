@@ -41,19 +41,6 @@ export function ProductModel({ selectedColorHex, onLoaded }) {
       }
     });
 
-    // Fallback: use first mesh material if matcher didn't find anything
-    if (!targetMaterial) {
-      clone.traverse((child) => {
-        if (!targetMaterial && child.isMesh && child.material) {
-          targetMaterial = child.material;
-          if (selectedColorHex) {
-            targetMaterial.color.set(selectedColorHex);
-            targetMaterial.sheenColor?.set(getCalibratedSheenColor(selectedColorHex));
-          }
-        }
-      });
-    }
-
     const box = new THREE.Box3().setFromObject(clone);
     const center = new THREE.Vector3();
     const size = new THREE.Vector3();
